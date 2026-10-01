@@ -169,9 +169,8 @@ credit-risk-scorecard/
 ---
 
 ## 👤 Author
-Manish Deswal 
-Data Science Student, Delhi University | Aspiring Credit Data Scientist
-[LinkedIn] | [GitHub] | [Portfolio]
+Manish Deswal Data Science Student, Delhi University [Linkdlein](https://www.linkedin.com/in/manish-deswal/)
+ 
 ```
 
 ---
