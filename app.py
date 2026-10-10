@@ -200,16 +200,94 @@ with tab1:
             st.info(f"The strongest factor increasing this applicant's risk was **{top_risk_factor.iloc[0]['feature']}**.")
             
             
-# with tab2:
-#     st.subheader("Model Performance & Feature Importance")
-    
-#     # You'd load a separately-pickled evaluation artifact here, e.g.:
-#     # with open("03_models/evaluation_metrics.pkl", "rb") as f:
-#     #     eval_data = pickle.load(f)
-    
-#     st.markdown("**IV Ranking, AUC, KS Chart, Confusion Matrix go here** — "
-#                 "these use your pre-computed test-set results, not live predictions.")
-    
-#     # Example: static image or pre-generated plotly figure loaded from disk
-#     # st.plotly_chart(eval_data['iv_ranking_fig'])
-#     # st.plotly_chart(eval_data['ks_chart_fig'])
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+
+@st.cache_resource
+def load_evaluation_metrics():
+    with open("03_models/evaluation_metrics.pkl", "rb") as f:
+        return pickle.load(f)
+
+eval_metrics = load_evaluation_metrics()
+
+with tab2:
+    st.subheader("Model Performance ")
+
+    # ---------- Headline metric tiles ----------
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("AUC", f"{eval_metrics['auc']:.3f}")
+    m2.metric("Gini", f"{eval_metrics['gini']:.3f}")
+    m3.metric("KS Statistic", f"{eval_metrics['ks_stat']:.3f}")
+    m4.metric("Decision Threshold", f"{eval_metrics['threshold']:.3f}")
+
+    st.divider()
+
+    # ---------- IV Ranking (top of dashboard — most important view) ----------
+    st.markdown("### Information Value (IV) — Feature Importance")
+    iv_df = eval_metrics['iv_table'].sort_values('IV')
+    fig_iv = go.Figure(go.Bar(
+        x=iv_df['IV'], y=iv_df['Variable'], orientation='h',
+        marker_color=['darkred' if v > 0.5 else 'orange' if v > 0.3 
+                       else 'gold' if v > 0.1 else 'lightblue' for v in iv_df['IV']]
+    ))
+    fig_iv.update_layout(xaxis_title="IV", height=400)
+    st.plotly_chart(fig_iv, use_container_width=True)
+
+    st.divider()
+
+    # ---------- ROC + PR curves side by side ----------
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### ROC Curve")
+        fig_roc = go.Figure()
+        fig_roc.add_trace(go.Scatter(x=eval_metrics['fpr'], y=eval_metrics['tpr'],
+                                      mode='lines', name=f"AUC = {eval_metrics['auc']:.3f}"))
+        fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines',
+                                      line=dict(dash='dash', color='gray'), name="Random"))
+        fig_roc.update_layout(xaxis_title="False Positive Rate", yaxis_title="True Positive Rate")
+        st.plotly_chart(fig_roc, use_container_width=True)
+
+    with c2:
+        st.markdown("### Precision-Recall Curve")
+        fig_pr = go.Figure()
+        fig_pr.add_trace(go.Scatter(x=eval_metrics['recalls'], y=eval_metrics['precisions'],
+                                     mode='lines', name=f"AP = {eval_metrics['avg_precision']:.3f}"))
+        fig_pr.update_layout(xaxis_title="Recall", yaxis_title="Precision")
+        st.plotly_chart(fig_pr, use_container_width=True)
+
+    st.divider()
+
+    # ---------- KS Chart + Confusion Matrix side by side ----------
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown(f"### KS Chart (KS = {eval_metrics['ks_stat']:.3f})")
+        ks_df = eval_metrics['ks_df']
+        fig_ks = go.Figure()
+        fig_ks.add_trace(go.Scatter(x=ks_df['population_pct'], y=ks_df['cum_bad'],
+                                     mode='lines', name='Cumulative Bad %', line=dict(color='crimson')))
+        fig_ks.add_trace(go.Scatter(x=ks_df['population_pct'], y=ks_df['cum_good'],
+                                     mode='lines', name='Cumulative Good %', line=dict(color='seagreen')))
+        fig_ks.update_layout(xaxis_title="% of Population", yaxis_title="Cumulative %")
+        st.plotly_chart(fig_ks, use_container_width=True)
+
+    with c4:
+        st.markdown(f"### Confusion Matrix (threshold={eval_metrics['threshold']:.3f})")
+        cm = eval_metrics['confusion_matrix']
+        fig_cm = go.Figure(go.Heatmap(
+            z=cm, x=['Not Default', 'Default'], y=['Not Default', 'Default'],
+            colorscale='Blues', text=cm, texttemplate="%{text}", showscale=False
+        ))
+        fig_cm.update_layout(xaxis_title="Predicted", yaxis_title="Actual")
+        st.plotly_chart(fig_cm, use_container_width=True)
+
+    st.divider()
+
+    # ---------- Calibration Curve ----------
+    st.markdown("### Calibration Curve")
+    fig_cal = go.Figure()
+    fig_cal.add_trace(go.Scatter(x=eval_metrics['prob_pred'], y=eval_metrics['prob_true'],
+                                  mode='lines+markers', name='Model'))
+    fig_cal.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines',
+                                  line=dict(dash='dash', color='gray'), name='Perfect Calibration'))
+    fig_cal.update_layout(xaxis_title="Predicted Probability", yaxis_title="Observed Frequency")
+    st.plotly_chart(fig_cal, use_container_width=True)
